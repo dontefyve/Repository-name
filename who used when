@@ -1,27 +1,54 @@
 import re
+from collections import defaultdict
+from datetime import datetime
 
-# Ask the user which log file to parse
+# Ask user for log file
 log_file = input("Enter the path to the log file: ")
 output_file = "parsed_results.txt"
 
-# Regex pattern to capture timestamps and usernames
-# Example expected log format:
-# 2024-01-12 10:33:21 User 'jsmith' logged in
-pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*User '(\w+)'"
+# Regex patterns
+success_pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*User '(\w+)' logged in"
+failed_pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Failed login for user '(\w+)'"
 
-try:
-    with open(log_file, "r") as f, open(output_file, "w") as out:
-        for line in f:
-            match = re.search(pattern, line)
-            if match:
-                timestamp = match.group(1)
-                username = match.group(2)
-                result = f"User: {username} | Time: {timestamp}"
-                print(result)
-                out.write(result + "\n")
+# Track failed attempts per user
+failed_attempts = defaultdict(int)
 
-    print(f"\nResults saved to {output_file}")
+with open(log_file, "r") as f, open(output_file, "w") as out:
+    for line in f:
+        # Successful login
+        success = re.search(success_pattern, line)
+        if success:
+            timestamp = success.group(1)
+            username = success.group(2)
 
-except FileNotFoundError:
-    print("The file you entered does not exist. Please check the path and try again.")
+            # Check for suspicious login time (outside 06:00–20:00)
+            dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+            suspicious_time = dt.hour < 6 or dt.hour > 20
 
+            result = f"SUCCESS | User: {username} | Time: {timestamp}"
+            print(result)
+            out.write(result + "\n")
+
+            if suspicious_time:
+                alert = f"ALERT: Suspicious login time for {username} at {timestamp}"
+                print(alert)
+                out.write(alert + "\n")
+
+        # Failed login
+        failed = re.search(failed_pattern, line)
+        if failed:
+            timestamp = failed.group(1)
+            username = failed.group(2)
+            failed_attempts[username] += 1
+
+            result = f"FAILED  | User: {username} | Time: {timestamp}"
+            print(result)
+            out.write(result + "\n")
+
+# After processing, check for brute-force indicators
+with open(output_file, "a") as out:
+    for user, count in failed_attempts.items():
+        if count >= 5:
+            alert = f"ALERT: Possible brute-force attack on user '{user}' — {count} failed attempts"
+            print(alert)
+            out.write(alert + "\n")
