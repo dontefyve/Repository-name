@@ -1,0 +1,73 @@
+import re
+import tkinter as tk
+from tkinter import filedialog, scrolledtext
+from collections import defaultdict
+from datetime import datetime
+
+# Regex patterns
+success_pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*User '(\w+)' logged in"
+failed_pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Failed login for user '(\w+)'"
+
+def parse_log():
+    log_file = filedialog.askopenfilename(title="Select Log File")
+    if not log_file:
+        return
+
+    output_file = "parsed_results.txt"
+    failed_attempts = defaultdict(int)
+
+    results_box.delete(1.0, tk.END)
+
+    with open(log_file, "r") as f, open(output_file, "w") as out:
+        for line in f:
+            success = re.search(success_pattern, line)
+            failed = re.search(failed_pattern, line)
+
+            if success:
+                timestamp = success.group(1)
+                username = success.group(2)
+
+                dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                suspicious_time = dt.hour < 6 or dt.hour > 20
+
+                result = f"SUCCESS | User: {username} | Time: {timestamp}\n"
+                results_box.insert(tk.END, result)
+                out.write(result)
+
+                if suspicious_time:
+                    alert = f"ALERT: Suspicious login time for {username} at {timestamp}\n"
+                    results_box.insert(tk.END, alert)
+                    out.write(alert)
+
+            if failed:
+                timestamp = failed.group(1)
+                username = failed.group(2)
+                failed_attempts[username] += 1
+
+                result = f"FAILED  | User: {username} | Time: {timestamp}\n"
+                results_box.insert(tk.END, result)
+                out.write(result)
+
+    # Brute-force detection
+    with open(output_file, "a") as out:
+        for user, count in failed_attempts.items():
+            if count >= 5:
+                alert = f"ALERT: Possible brute-force attack on user '{user}' — {count} failed attempts\n"
+                results_box.insert(tk.END, alert)
+                out.write(alert)
+
+# GUI setup
+root = tk.Tk()
+root.title("Log Parser & Detection Tool")
+root.geometry("700x500")
+
+title_label = tk.Label(root, text="CySA+ Log Parser", font=("Arial", 16))
+title_label.pack(pady=10)
+
+parse_button = tk.Button(root, text="Select Log File and Parse", command=parse_log, font=("Arial", 12))
+parse_button.pack(pady=10)
+
+results_box = scrolledtext.ScrolledText(root, width=80, height=20, font=("Courier", 10))
+results_box.pack(pady=10)
+
+root.mainloop()
