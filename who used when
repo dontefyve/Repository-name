@@ -2,16 +2,19 @@ import re
 
 # Path to your log file
 log_file = "system.log"
+output_file = "parsed_results.txt"
 
 # Regex pattern to capture timestamps and usernames
 # Example expected log format:
 # 2024-01-12 10:33:21 User 'jsmith' logged in
 pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*User '(\w+)'"
 
-with open(log_file, "r") as f:
+with open(log_file, "r") as f, open(output_file, "w") as out:
     for line in f:
         match = re.search(pattern, line)
         if match:
             timestamp = match.group(1)
             username = match.group(2)
-            print(f"User: {username} | Time: {timestamp}")
+            result = f"User: {username} | Time: {timestamp}"
+            print(result)
+            out.write(result + "\n")
