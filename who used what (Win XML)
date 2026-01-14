@@ -1,0 +1,72 @@
+import xml.etree.ElementTree as ET
+import tkinter as tk
+from tkinter import filedialog, scrolledtext
+from collections import defaultdict
+
+def parse_log():
+    log_file = filedialog.askopenfilename(title="Select Windows Security XML Log")
+    if not log_file:
+        return
+
+    output_file = "parsed_windows_logons.txt"
+    failed_attempts = defaultdict(int)
+
+    results_box.delete(1.0, tk.END)
+
+    tree = ET.parse(log_file)
+    root = tree.getroot()
+
+    with open(output_file, "w") as out:
+        for event in root.findall(".//Event"):
+            system = event.find("System")
+            event_id = system.find("EventID").text
+            timestamp = system.find("TimeCreated").attrib.get("SystemTime", "Unknown")
+
+            # Only process logon events
+            if event_id not in ("4624", "4625"):
+                continue
+
+            eventdata = event.find("EventData")
+            data_fields = {d.attrib.get("Name"): d.text for d in eventdata.findall("Data")}
+
+            username = data_fields.get("TargetUserName", "Unknown")
+            logon_type = data_fields.get("LogonType", "Unknown")
+
+            if event_id == "4624":
+                result = f"SUCCESS | User: {username} | LogonType: {logon_type} | Time: {timestamp}\n"
+                results_box.insert(tk.END, result)
+                out.write(result)
+
+            elif event_id == "4625":
+                failed_attempts[username] += 1
+                failure_reason = data_fields.get("FailureReason", "Unknown")
+
+                result = (
+                    f"FAILED  | User: {username} | LogonType: {logon_type} | "
+                    f"Reason: {failure_reason} | Time: {timestamp}\n"
+                )
+                results_box.insert(tk.END, result)
+                out.write(result)
+
+        # Brute-force detection
+        for user, count in failed_attempts.items():
+            if count >= 5:
+                alert = f"ALERT: Possible brute-force attack on '{user}' — {count} failed attempts\n"
+                results_box.insert(tk.END, alert)
+                out.write(alert)
+
+# GUI setup
+root = tk.Tk()
+root.title("Windows Logon Event Parser (XML)")
+root.geometry("700x500")
+
+title_label = tk.Label(root, text="Windows Logon Event Parser (4624/4625)", font=("Arial", 16))
+title_label.pack(pady=10)
+
+parse_button = tk.Button(root, text="Select Security Log XML and Parse", command=parse_log, font=("Arial", 12))
+parse_button.pack(pady=10)
+
+results_box = scrolledtext.ScrolledText(root, width=80, height=20, font=("Courier", 10))
+results_box.pack(pady=10)
+
+root.mainloop()
