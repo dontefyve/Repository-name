@@ -1,27 +1,42 @@
 import re
+import smtplib
+from email.mime.text import MIMEText
 from collections import defaultdict
 from datetime import datetime
 
-# Ask user for log file
 log_file = input("Enter the path to the log file: ")
 output_file = "parsed_results.txt"
 
-# Regex patterns
+SMTP_SERVER = "smtp.example.com"
+SMTP_PORT = 587
+SMTP_USER = "alerts@example.com"
+SMTP_PASS = "PASSWORD"
+ALERT_TO = "team@example.com"
+
+def send_email(subject, body):
+    msg = MIMEText(body)
+    msg["From"] = SMTP_USER
+    msg["To"] = ALERT_TO
+    msg["Subject"] = subject
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, ALERT_TO, msg.as_string())
+
 success_pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*User '(\w+)' logged in"
 failed_pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*Failed login for user '(\w+)'"
 
-# Track failed attempts per user
 failed_attempts = defaultdict(int)
 
 with open(log_file, "r") as f, open(output_file, "w") as out:
     for line in f:
-        # Successful login
         success = re.search(success_pattern, line)
+        failed = re.search(failed_pattern, line)
+
         if success:
             timestamp = success.group(1)
             username = success.group(2)
-
-            # Check for suspicious login time (outside 06:00–20:00)
             dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
             suspicious_time = dt.hour < 6 or dt.hour > 20
 
@@ -30,12 +45,9 @@ with open(log_file, "r") as f, open(output_file, "w") as out:
             out.write(result + "\n")
 
             if suspicious_time:
-                alert = f"ALERT: Suspicious login time for {username} at {timestamp}"
-                print(alert)
-                out.write(alert + "\n")
+                alert = f"Suspicious login time for {username} at {timestamp}"
+                send_email("Suspicious Login Detected", alert)
 
-        # Failed login
-        failed = re.search(failed_pattern, line)
         if failed:
             timestamp = failed.group(1)
             username = failed.group(2)
@@ -45,10 +57,7 @@ with open(log_file, "r") as f, open(output_file, "w") as out:
             print(result)
             out.write(result + "\n")
 
-# After processing, check for brute-force indicators
-with open(output_file, "a") as out:
-    for user, count in failed_attempts.items():
-        if count >= 5:
-            alert = f"ALERT: Possible brute-force attack on user '{user}' — {count} failed attempts"
-            print(alert)
-            out.write(alert + "\n")
+for user, count in failed_attempts.items():
+    if count >= 5:
+        alert = f"Possible brute-force attack on user '{user}' — {count} failed attempts"
+        send_email("Brute Force Alert", alert)
